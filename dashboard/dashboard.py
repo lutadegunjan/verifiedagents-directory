@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_FILE = ROOT / "data" / "verifiedagents_enriched_candidate_4000.csv"
+DATA_FILE = ROOT / "Submission File (Gunjan).xlsx"
 
 COLUMNS = [
     "s_no",
@@ -45,7 +45,14 @@ if not DATA_FILE.exists():
 
 @st.cache_data
 def load_data(path, modified_time):
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df = pd.read_excel(
+        path,
+        sheet_name="Verifiedagents Directory",
+        header=1,
+        dtype=str,
+        keep_default_na=False
+    )
+    df.columns = df.columns.astype(str).str.strip()
     missing = [col for col in COLUMNS if col not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
