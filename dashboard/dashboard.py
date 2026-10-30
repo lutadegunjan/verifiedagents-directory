@@ -1,11 +1,13 @@
-
+﻿
 from pathlib import Path
+import re
 import pandas as pd
+import pgeocode
 import streamlit as st
 
 st.set_page_config(
     page_title="VerifiedAgents Directory",
-    page_icon="📋",
+    page_icon="ðŸ“‹",
     layout="wide",
 )
 
@@ -59,6 +61,116 @@ except Exception as exc:
 
 def has_value(series):
     return series.astype(str).str.strip().ne("")
+
+
+STATE_MAP = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ",
+    "ARKANSAS": "AR", "CALIFORNIA": "CA", "COLORADO": "CO",
+    "CONNECTICUT": "CT", "DELAWARE": "DE", "FLORIDA": "FL",
+    "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+    "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA",
+    "KANSAS": "KS", "KENTUCKY": "KY", "LOUISIANA": "LA",
+    "MAINE": "ME", "MARYLAND": "MD", "MASSACHUSETTS": "MA",
+    "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+    "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE",
+    "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM", "NEW YORK": "NY",
+    "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND",
+    "OHIO": "OH", "OKLAHOMA": "OK", "OREGON": "OR",
+    "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI",
+    "SOUTH CAROLINA": "SC", "SOUTH DAKOTA": "SD",
+    "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+    "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI",
+    "WYOMING": "WY", "DISTRICT OF COLUMBIA": "DC",
+}
+
+VALID_STATES = set(STATE_MAP.values())
+STATE_PATTERN = "|".join(
+    re.escape(state)
+    for state in sorted(
+        list(STATE_MAP) + list(VALID_STATES),
+        key=len,
+        reverse=True,
+    )
+)
+LOCATION_PATTERN = re.compile(
+    r",\s*(" + STATE_PATTERN + r")\s*,\s*(\d{5})(?:-\d{4})?",
+    re.IGNORECASE,
+)
+
+# These six city/state values were checked against their source profiles.
+MANUAL_CITY_OVERRIDES = {
+    "18425": ("Tampa", "FL"),
+    "41014": ("Portland", "ME"),
+    "49032": ("Ormond Beach", "FL"),
+    "19889": ("Wilmington", "DE"),
+    "26373": ("Spring Hill", "FL"),
+    "34563": ("New Port Richey", "FL"),
+}
+
+
+@st.cache_data
+def lookup_zip_codes(zip_codes):
+    if not zip_codes:
+        return {}
+
+    geo = pgeocode.Nominatim("us")
+    results = geo.query_postal_code(list(zip_codes))
+    lookup = {}
+
+    for _, row in results.iterrows():
+        zipcode = str(row["postal_code"]).strip()
+        city = row["place_name"]
+        state = row["state_code"]
+
+        if pd.notna(city) and pd.notna(state):
+            lookup[zipcode] = (
+                str(city).strip(),
+                str(state).strip().upper(),
+            )
+
+    return lookup
+
+
+def geographic_metrics(frame):
+    zip_states = {}
+    states = set()
+
+    for location in frame["location"]:
+        normalized = re.sub(r"\s+", " ", str(location)).strip()
+        match = LOCATION_PATTERN.search(normalized)
+
+        if not match:
+            continue
+
+        raw_state = match.group(1).upper()
+        state = STATE_MAP.get(raw_state, raw_state)
+        zipcode = match.group(2)
+
+        states.add(state)
+        zip_states.setdefault(zipcode, set()).add(state)
+
+    zip_lookup = lookup_zip_codes(tuple(sorted(zip_states)))
+    city_pairs = set()
+
+    for zipcode, source_states in zip_states.items():
+        if zipcode in MANUAL_CITY_OVERRIDES:
+            city, state = MANUAL_CITY_OVERRIDES[zipcode]
+            city_pairs.add((city.casefold(), state))
+            continue
+
+        result = zip_lookup.get(zipcode)
+        if not result:
+            continue
+
+        city, lookup_state = result
+
+        for source_state in source_states:
+            if lookup_state == source_state:
+                city_pairs.add((city.casefold(), source_state))
+
+    return len(states), len(city_pairs), len(zip_states)
 
 
 st.sidebar.header("Search and Filters")
@@ -115,6 +227,13 @@ k5.metric(
     f"{has_value(filtered['appointed_companies']).sum():,}",
 )
 
+st.subheader("Geographic Coverage")
+state_count, city_count, zip_count = geographic_metrics(filtered)
+g1, g2, g3 = st.columns(3)
+g1.metric("Unique States", f"{state_count:,}")
+g2.metric("Unique Cities (City-State)", f"{city_count:,}")
+g3.metric("Unique ZIP Codes", f"{zip_count:,}")
+
 st.subheader("Field Coverage")
 coverage = []
 for col in DETAIL_FIELDS:
@@ -159,4 +278,6 @@ st.download_button(
     mime="text/csv",
     disabled=filtered.empty,
 )
+
+
 
