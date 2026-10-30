@@ -1,0 +1,10 @@
+*
+!.gitignore
+!requirements.txt
+!README.md
+!dashboard/
+dashboard/*
+!dashboard/dashboard.py
+!data/
+data/*
+!data/verifiedagents_enriched_candidate_4000.csv
