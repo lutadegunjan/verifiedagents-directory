@@ -8,3 +8,5 @@ dashboard/*
 !data/
 data/*
 !data/verifiedagents_enriched_candidate_4000.csv
+
+!PROCESS_DOCUMENTATION.md
