@@ -36,7 +36,6 @@ DETAIL_FIELDS = [
 ]
 
 st.title("VerifiedAgents Directory")
-st.caption("Insurance Agent Directory | 4,000 Profiles")
 
 if not DATA_FILE.exists():
     st.error(f"Dataset not found: {DATA_FILE}")
@@ -64,6 +63,8 @@ try:
 except Exception as exc:
     st.error(f"Could not load dataset: {exc}")
     st.stop()
+
+st.caption(f"Insurance Agent Directory | {len(df):,} Profiles")
 
 
 def has_value(series):
